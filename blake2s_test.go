@@ -8,9 +8,108 @@
 package blake2s
 
 import (
+	"encoding/hex"
+	// "errors"
+	"crypto/rand"
 	"fmt"
+	"math/big"
+	"strconv"
 	"testing"
 )
+
+func strSwitchEndian(oldstr string) string {
+	if len(oldstr)%2 != 0 {
+		oldstr = "0" + oldstr
+	}
+
+	slen := len(oldstr)
+
+	newstr := ""
+	for i := 0; i < slen; i += 2 {
+		newstr += oldstr[slen-i-2 : slen-i]
+	}
+
+	return newstr
+}
+func TestRandom(t *testing.T) {
+	nonceRand, err := rand.Int(rand.Reader, big.NewInt(0x7FFFFFFF))
+	if err != nil {
+		nonceRand = big.NewInt(0)
+		fmt.Println("job", "MakeReplyJob", "rand.Int err", err)
+	}
+	nonceInt64 := nonceRand.Int64()
+	nonceStr := fmt.Sprintf("%02x00000000", nonceInt64)
+	fmt.Println(nonceStr)
+	nonceStr = strSwitchEndian(nonceStr)
+	fmt.Println(nonceStr)
+}
+
+// void diff_to_target(uint32_t *target, double diff)
+// {
+// 	uint64_t m;
+// 	int k;
+
+// 	for (k = 6; k > 0 && diff > 1.0; k--)
+// 		diff /= 4294967296.0;
+// 	m = (uint64_t)(4294901760.0 / diff);
+// 	if (m == 0 && k == 6)
+// 		memset(target, 0xff, 32);
+// 	else {
+// 		memset(target, 0, 32);
+// 		target[k] = (uint32_t)m;
+// 		target[k + 1] = (uint32_t)(m >> 32);
+// 	}
+// }
+func TestDifftotarget(t *testing.T) {
+	diff := 10.0 / 65536
+	// var m uint64
+	var target [8]uint32
+	k := 6
+	for ; k > 0 && diff > 1.0; k-- {
+		diff /= 4294967296.0
+	}
+
+	m := (uint64)(4294901760.0 / diff)
+	if m == 0 && k == 6 {
+		for i := 0; i < 8; i++ {
+			target[i] = 0xffffffff
+		}
+	} else {
+		target[k] = (uint32)(m)
+		fmt.Println(target[k])
+		fmt.Println(strconv.FormatUint(uint64(target[k]), 16))
+		target[k+1] = (uint32)(m >> 32)
+		fmt.Println(strconv.FormatUint(uint64(target[k+1]), 16))
+	}
+	for i := 7; i >= 0; i-- {
+		// fmt.Printf("%0x", target[i])
+		t := strconv.FormatUint(uint64(target[i]), 16)
+		if len(t) != 8 {
+			forlen := len(t)
+			for j := 0; j < 8-forlen; j++ {
+				t = "0" + t
+			}
+		}
+		fmt.Printf("%s", t)
+	}
+	fmt.Println("")
+}
+func TestGetDifficultyFromBits(t *testing.T) {
+	nBits := 0x1e0fffff
+	nShift := (nBits >> 24) & 0xff
+
+	dDiff := (float64)(0x0000ffff) / (float64)(nBits&0x00ffffff)
+
+	for nShift < 29 {
+		dDiff *= 256.0
+		nShift++
+	}
+	for nShift > 29 {
+		dDiff /= 256.0
+		nShift--
+	}
+	fmt.Println(dDiff)
+}
 
 func TestSum(t *testing.T) {
 	buf := make([]byte, len(golden))
@@ -18,15 +117,22 @@ func TestSum(t *testing.T) {
 		buf[i] = byte(i)
 	}
 	h := New256()
-	for i, v := range golden {
-		h.Reset()
-		h.Write(buf[:i])
-		sum := h.Sum(nil)
-		if fmt.Sprintf("%x", sum) != v {
-			t.Errorf("%d:\nexpected %s\ngot      %x", i, v, sum)
-		}
+	// for i, v := range golden {
+	h.Reset()
+	// data, _ := hex.DecodeString("12345678abcdefef")
+	// header := "022000004793bff51ec222eaa88fb7d895e58611fd4fa7e337923a4f1e3ecfca01e1b46524e1d6862fe5ee9e424c358d95b634f90aa7596b75db738ea03b6c3bf555da19655b445bffff0f1ef7fcd934"
+	header := "022000004793bff51ec222eaa88fb7d895e58611fd4fa7e337923a4f1e3ecfca01e1b46524e1d6862fe5ee9e424c358d95b634f90aa7596b75db738ea03b6c3bf555da19655b445bffff0f1ef7fcd934"
+	// str := strSwitchEndian(header)
 
-	}
+	data, err := hex.DecodeString(str)
+	fmt.Println("err:", err)
+	h.Write(data)
+	sum := h.Sum(nil)
+	// if fmt.Sprintf("%x", sum) != v {
+	// 	t.Errorf("%d:\nexpected %s\ngot      %x", i, v, sum)
+	// }
+	fmt.Println(data, ":", hex.EncodeToString(sum))
+	// }
 }
 
 func TestSumLength(t *testing.T) {
